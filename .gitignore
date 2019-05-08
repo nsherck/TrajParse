@@ -1,0 +1,8 @@
+*.txt
+*.data
+*.png
+*.pdb
+*.dcd
+*.lammpstrj
+*.pyc
+*.LOG
