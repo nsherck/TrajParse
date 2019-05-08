@@ -48,6 +48,8 @@ global  PickSkip
 global  EveryNthAtom
 global  RemoveFirstNatoms
 
+#TESTING LOG
+
 with open('Timing.LOG', 'w') as f:
 	f.write('File with timing breakdowns. \n')
 Overall_start_time = time.time()
