@@ -2,8 +2,11 @@ import numpy as np
 import scipy as sp
 import scipy.stats
 import math
+from TrajParse_Classes import Atom, Molecule 
 
-def ParseLAMMPSDataFile(filename):
+def ParseLAMMPSDataFile(filename, Debug_ParseData, ATOM_TYPE_IGNORES_MOLECULES, ATOM_TYPE_IGNORES_BACKBONE):
+	atoms = []
+	molecules = []
 	''' Parses a LAMMPS data file to build topology '''
 	#First must generate a list of atoms with their respective IDs and atom types
 	print 'Reading in the input file: {}'.format(filename)
@@ -87,17 +90,6 @@ def ParseLAMMPSDataFile(filename):
 	print "Number of molecules found in system: {}".format(len(molecules)) 
 	print "Number of excluded molecules in system: {}".format(IgnoredMolecules)
 	
-	#Molecule_1 = Molecule(1,1)
-	#for i in atoms: 
-	#	tempID = i.atomID
-	#	tempChemistry = i.atomChemistry
-		# Checks to see if a Hydrogen, otherwise considered a "backbone" atom.
-		# This is okay for PEO, but maybe not more complicated polymer chemistries. 
-		# N.S. TODO: Generalize this functionality!
-	#	if tempChemistry != "H":
-	#		Molecule_1.addAtom(tempID)
-	#	else:
-	#		pass
 	if Debug_ParseData == 1:
 		print "Atoms in the first molecule:"
 		print molecules[0].Atoms
@@ -144,7 +136,7 @@ def ParseLAMMPSDataFile(filename):
 	
 	print "Building Backbone atoms."
 	for i in molecules:
-		i.parseAtoms(atoms)
+		i.parseAtoms(atoms, ATOM_TYPE_IGNORES_BACKBONE)
 		temp_StartAtoms = i.AtomsBackbone[0]
 		temp_EndAtoms = i.AtomsBackbone[-1]
 		i.moleculeBeginEndAtoms = [temp_StartAtoms, temp_EndAtoms]
