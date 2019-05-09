@@ -152,3 +152,22 @@ def DoBootStrappingOnHistogram(data,hist,NumberBins,RangeMin,RangeMax):
 	HistAvgValueStdDev = np.std(GenDataSets)
 	
 	return HistAvg, CIPlus, CIMinus, alpha, NormHistByMax, HistAvgValue, HistAvgValueStdDev
+	
+def PickleObjects(filename,data2pickle, Debug_Pickling):
+	''' Save the filename '''
+	import pickle as pickle
+	f = open(filename, 'wb')
+	pickle.dump(data2pickle,f) # pickling the data
+	f.close()
+	
+	if Debug_Pickling == 1:
+		f_open = open(filename)
+		import_from_pickle = pickle.load(f_open)
+		if filename == 'atoms.pickled':
+			print ("atom 1 ID:")
+			print (import_from_pickle[0].atomID)
+		elif filename == 'molecules.pickled':
+			print ("molecule 1 ID:")
+			print (import_from_pickle[0].moleculeID)
+			
+			

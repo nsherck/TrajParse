@@ -13,7 +13,7 @@ import mdtraj.reporters
 import time
 from DataFileTemplates import ParseLAMMPSDataFile
 from TrajParse_Classes import Atom, Molecule 
-from TrajParse_Functions import CombineMolecularBondBondCorrelationFunctions, ExpFunction, FitCurve, CalculateChainStatistics, nint, WrapCoarseGrainCoordinates, DoBootStrappingOnHistogram
+from TrajParse_Functions import CombineMolecularBondBondCorrelationFunctions, ExpFunction, FitCurve, CalculateChainStatistics, nint, WrapCoarseGrainCoordinates, DoBootStrappingOnHistogram, PickleObjects
 
 with open('Timing.LOG', 'w') as f:
 	f.write('File with timing breakdowns. \n')
@@ -23,7 +23,6 @@ with open('Print.LOG', 'w') as pLog:
 	pLog.write('File recording the calculation progress. \n')
 	
 ''' TEST ''' 
-
 #traj_test = md.load_lammpstrj('dump.coords_u_s.dat', top='PreNVTProduction.pdb')
 #traj_test = md.load_dcd('npt_production_output_unwrapped.dcd',top='initial.pdb')
 #print traj_test.n_frames
@@ -31,11 +30,11 @@ with open('Print.LOG', 'w') as pLog:
 
 
 ''' Debugging flags '''
-Debug = 0 			# Debug Flag. If "1" on, if "0" off. 
+Debug = False 			# Debug Flag. If "1" on, if "0" off. 
 Debug_ParseData = 0 # Debug just the parse lmp.data file 
-Debug_Pickling = 0  # Debug pickling saving and loading for atom and molecule objects
-Debug_PersistenceLength = 0
-Debug_CGing = 0
+Debug_Pickling = False  # Debug pickling saving and loading for atom and molecule objects
+Debug_PersistenceLength = False
+Debug_CGing = False
 
 ''' USER INPUTS ''' 
 # The TrajFileFormat is likely not going to be used and is deprecated 
@@ -44,7 +43,7 @@ ReadDataFile = 1 # read in LAMMPS data/topology
 LammpsInputFilename = "system_EO7.data" # even if importing from .dcd need to have a LAMMPS topology file
 startStep = 0 # Start on this index 
 Read_Pickle = False
-Pickle_Objects = False  # Do not pickle objects (also will not pickle if Read_Pickle is True, i.e. do not overwrite)
+Pickle_Objects = True  # Do not pickle objects (also will not pickle if Read_Pickle is True, i.e. do not overwrite)
 ShowFigures = False
 ''' DCD Specific '''
 Infiles = ['chain_0.dcd']#,'chain_1.dcd']#,'chain_2.dcd','chain_3.dcd','chain_4.dcd']#,'nvt_production_output_wrapped_chain_1.dcd','nvt_production_output_wrapped_chain_2.dcd']
@@ -170,15 +169,15 @@ if CalculateCOM == True:
 	f.close()	
 
 	if Debug == 1:
-		print "molecule IDs and Center of masses:"
+		print ("molecule IDs and Center of masses:")
 		for molecule in molecules:	
-			print "molecule {} begin and end atoms {}".format(molecule.moleculeID, moleculeBeginEndAtoms)
-			print "molecule {} center of mass: {}".format(molecule.moleculeID, molecule.CenterOfMass)
+			print ("molecule {} begin and end atoms {}".format(molecule.moleculeID, moleculeBeginEndAtoms))
+			print ("molecule {} center of mass: {}".format(molecule.moleculeID, molecule.CenterOfMass))
 
 if CalculateRg == True:
 	if CalculateCOM == False:
-		print "Trying to calculate Rg without COM Calculation!"
-	print "Calculating Radius of Gyration."
+		print ("Trying to calculate Rg without COM Calculation!")
+	print ("Calculating Radius of Gyration.")
 	for Molecule in molecules:
 		start_time_Rg = time.time()
 		Molecule.CalculateRadiusOfGyration(atoms)
@@ -189,13 +188,13 @@ if CalculateRg == True:
 		f.close()
 
 	''' Calculate Rg Average Quantities '''	
-	print "Calculating Rg Average Quantities."
+	print ("Calculating Rg Average Quantities.")
 	cnt = 0
 	Rg_list = []
 	header = []
 	Rg_temp = 0.0
 	RgNormalizing = len(molecules[0].RadiusOfGyration)
-	print "Length of Rg Data: {}".format(RgNormalizing)
+	print ("Length of Rg Data: {}".format(RgNormalizing))
 	header.append("Step")
 	for Molecule in molecules:
 		Rg_temp = sum(Molecule.RadiusOfGyration) + Rg_temp
@@ -211,7 +210,7 @@ if CalculateRg == True:
 		cnt += 1
 
 if CalculateRee == True:
-	print "Calculating End-to-End Vector."
+	print ("Calculating End-to-End Vector.")
 	for Molecule in molecules:
 		start_time_Ree = time.time()
 		Molecule.CalculateEndtoEndVector(atoms)
@@ -222,13 +221,13 @@ if CalculateRee == True:
 	f.close()	
 
 	''' Calculate Ree Average Quantities '''
-	print "Calculating Ree Average Quantities."
+	print ("Calculating Ree Average Quantities.")
 	cnt = 0
 	Ree_list = []
 	header = []
 	Ree_temp = 0.0
 	ReeNormalizing = len(molecules[0].EndtoEndVector)
-	print "Length of Ree data: {}".format(ReeNormalizing)
+	print ("Length of Ree data: {}".format(ReeNormalizing))
 	header.append("Step")
 	for Molecule in molecules:
 		Ree_temp = sum(Molecule.EndtoEndVector) + Ree_temp
@@ -714,30 +713,12 @@ if CoarseGrainTrajectory == True:
 		 
 if Read_Pickle == False and Pickle_Objects == True:
 	''' Save system objects atoms and molecules to pickled files. '''
-	print "Pickling the atom and molecule objects."
-	import pickle as pickle
-	filename_atoms = "atoms.pickled"
-	f_atoms = open(filename_atoms, 'wb')
-	filename_molecules = "molecules.pickled"
-	f_molecules = open(filename_molecules, 'wb')
-	pickle.dump(atoms,f_atoms) # write atoms to pickled file
-	f_atoms.close()
-	pickle.dump(molecules,f_molecules) # write molecules to pickled file
-	f_molecules.close()
+	print ("Pickling the atom and molecule objects.")
+	PickleObjects("atoms.pickled", atoms,Debug_Pickling)
+	PickleObjects("molecules.pickled", molecules,Debug_Pickling)
+
 	
-	if Debug_Pickling == 1:
-		f_open_atoms = open(filename_atoms)
-		f_open_molecules = open(filename_molecules)
-		atoms_import_from_pickle = pickle.load(f_open_atoms)
-		molecules_import_from_pickle = pickle.load(f_open_molecules)
-		print "atom 1 ID:"
-		print atoms_import_from_pickle[0].atomID
-		print "atom 1 Positions:"
-		print atoms_import_from_pickle[0].Pos
-		print "molecule 1 ID:"
-		print molecules_import_from_pickle[0].moleculeID
-		print "molecule 1 atoms in backbone:"
-		print molecules_import_from_pickle[0].AtomsBackbone
+
 
 Overall_end_time = time.time()
 f = open("Timing.LOG", "a")
