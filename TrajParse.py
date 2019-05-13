@@ -11,7 +11,7 @@ import subprocess as prcs
 import mdtraj as md
 import mdtraj.reporters
 import time
-from DataFileTemplates import ParseLAMMPSDataFile
+from DataFileTemplates import ParseLAMMPSDataFile, ParsePDBDataFile
 from TrajParse_Classes import Atom, Molecule 
 from TrajParse_Functions import CombineMolecularBondBondCorrelationFunctions, ExpFunction, FitCurve, CalculateChainStatistics, nint, WrapCoarseGrainCoordinates, DoBootStrappingOnHistogram, PickleObjects
 
@@ -31,7 +31,7 @@ with open('Print.LOG', 'w') as pLog:
 
 ''' Debugging flags '''
 Debug = False 			# Debug Flag. If "1" on, if "0" off. 
-Debug_ParseData = 0 # Debug just the parse lmp.data file 
+Debug_ParseData = False # Debug just the parse lmp.data file 
 Debug_Pickling = False  # Debug pickling saving and loading for atom and molecule objects
 Debug_PersistenceLength = False
 Debug_CGing = False
@@ -39,18 +39,27 @@ Debug_CGing = False
 ''' USER INPUTS ''' 
 # The TrajFileFormat is likely not going to be used and is deprecated 
 TrajFileFormat = "PDB" # either LAMMPS or PDB || Currently not used!!
-ReadDataFile = 1 # read in LAMMPS data/topology 
+ReadLAMMPSDataFile = False # read in LAMMPS data/topology 
 LammpsInputFilename = "system_EO7.data" # even if importing from .dcd need to have a LAMMPS topology file
+
+ReadPDBDataFile = True # read in PDB (and .mol2) data/topology file
+PDBInputFilename = 'AA33_w0.25_parm.pdb'
+Mol2InputFilename = 'AA33_w0.25.mol2'
+IGNORE_WATER = True
+
 startStep = 0 # Start on this index 
 Read_Pickle = False
 Pickle_Objects = True  # Do not pickle objects (also will not pickle if Read_Pickle is True, i.e. do not overwrite)
 ShowFigures = False
+
 ''' DCD Specific '''
-Infiles = ['chain_0.dcd']#,'chain_1.dcd']#,'chain_2.dcd','chain_3.dcd','chain_4.dcd']#,'nvt_production_output_wrapped_chain_1.dcd','nvt_production_output_wrapped_chain_2.dcd']
-topfilename = 'EO7.pdb'
-atomIndices = 51
+#Infiles = ['chain_0.dcd']#,'chain_1.dcd']#,'chain_2.dcd','chain_3.dcd','chain_4.dcd']#,'nvt_production_output_wrapped_chain_1.dcd','nvt_production_output_wrapped_chain_2.dcd']
+Infiles = ['trajectory298.nc']
+#topfilename = 'EO7.pdb'
+topfilename = 'AA33_w0.25_parm.pdb'
+atomIndices = 14968
 Read_DCD    = True
-TimestepImportFrequency = 10
+TimestepImportFrequency = 1
 ''' LAMMPS Specific '''
 Read_LAMMPSTraj = False
 ''' Calculations to Perform '''
@@ -63,7 +72,7 @@ DoBootStrapping = True
 ''' Coarse-graining '''
 CoarseGrainTrajectory = True
 # #BackboneAtoms; #BackboneAtoms2oneMonomer; MonomerType
-CGMappingBackbone = [[3, 3, 1],[15, 3, 2],[3, 3, 1]] # for the first 72 atoms, take the three backbone atoms and map them to one!
+CGMappingBackbone = [[2, 2, 1],[2, 2, 2],[58, 2, 3],[2, 2, 2],[2, 2, 1]] # for the first 72 atoms, take the three backbone atoms and map them to one!
 
 #startStep EXAMPLE: if output every 200 timesteps with 1 fs timestep, 
 #		then a value of 5000 is 1 nanosecond.
@@ -88,20 +97,25 @@ Number_Skipped_Atoms = 1
 
 # Alternative to ALL atoms and PickSkip 
 EveryNthAtom = 3
-RemoveFirstNatoms = [1] # removes the first atom from the list, put the list index into this list
+RemoveFirstNatoms = [] # removes the first atom from the list, put the list index into this list
 
 ''' Put in from other script to add in bonding from the input data file '''
-ATOM_TYPE_IGNORES_MOLECULES = [84,85] # Set the atom types to ignore for molecules
-ATOM_TYPE_IGNORES_BACKBONE = [20] # Set the atom types to ignore in the polymer backbone
+ATOM_TYPE_IGNORES_MOLECULES = ['vs', 'na+','n'] # Set the atom types to ignore for molecules
+# Exclusions by atom_Type
+ATOM_TYPE_IGNORES_BACKBONE = [20] # Set the atom types to ignore in the polymer backbone, used for LAMMPSDataFiles or PDB/mol2
+# Exclusions by atom_Name
+ATOM_NAMES_IGNORES_BACKBONE = ['HA','HC','OD','CB','na+','n',"HO"] # set the atom names to ignore when making polymer backbone, used for PDB/mol2 files
 
 ''' ************************************************************************************************************* '''
 ''' *********************************** END OF USER INPUTS ****************************************************** '''
 ''' ************************************************************************************************************* '''
 
+''' Loading in a trajectory '''
+
 if Read_LAMMPSTraj == True:
 	''' Find out molecular topology '''
 	# fills in atom bonding
-	if ReadDataFile == 1:
+	if ReadLAMMPSDataFile == True:
 		[atoms, molecules] = ParseLAMMPSDataFile(LammpsInputFilename,Debug_ParseData, ATOM_TYPE_IGNORES_MOLECULES, ATOM_TYPE_IGNORES_BACKBONE)
 	else: 
 		pass
@@ -109,22 +123,29 @@ if Read_LAMMPSTraj == True:
 
 	
 elif Read_DCD == True:
-	if ReadDataFile == 1: # Read in a LAMMPS Data File 
+	if ReadLAMMPSDataFile == True: # Read in a LAMMPS Data File 
 		[atoms, molecules] = ParseLAMMPSDataFile(LammpsInputFilename,Debug_ParseData, ATOM_TYPE_IGNORES_MOLECULES, ATOM_TYPE_IGNORES_BACKBONE)
-	else: 
+		top_atomindexlist = []
+	elif ReadPDBDataFile: 
+		[atoms, molecules, top_atomindexlist] = ParsePDBDataFile(PDBInputFilename, Mol2InputFilename, Debug_ParseData, IGNORE_WATER, ATOM_TYPE_IGNORES_MOLECULES, ATOM_TYPE_IGNORES_BACKBONE, ATOM_NAMES_IGNORES_BACKBONE)
+	else:
 		pass
 	
-	aIndices = range(atomIndices)
 	''' Load in a DCD Traj. file. '''
+	aIndices = range(atomIndices)
 	# Requires a .pdb file (for topology)
 	print ("Loading in a .DCD trajectory file.")
 	traj = md.load(Infiles,top=topfilename,atom_indices=aIndices)
-	print ("unit cell")
+	print ("unit cell:")
 	print ("{}".format(traj.unitcell_lengths[0])) # List of the unit cell on each frame
 	print ('number of frames:')
 	print ("{}".format(traj.n_frames))
-	print ('number of atoms')
+	print ('number of atoms:')
 	print ("{}".format(traj.n_atoms))
+	print ('number of atoms tracking in top_atomindexlist:')
+	print ("{}".format(len(top_atomindexlist)))
+	print ('number of atoms objects created:')
+	print ("{}".format(len(atoms)))
 	# Slices the input trajectory information to shorten
 	shortTraj = traj.xyz[::TimestepImportFrequency]
 	shortBoxLengths = traj.unitcell_lengths[::TimestepImportFrequency]
@@ -132,8 +153,13 @@ elif Read_DCD == True:
 	cnt =  0
 	for frame in shortTraj:
 		cnt +=1
-		for index,atom in enumerate(atoms):
-			atom.Pos.append(frame[index])
+		if ReadLAMMPSDataFile == True:
+			for index,atom in enumerate(atoms):
+				atom.Pos.append(frame[index])
+		elif ReadPDBDataFile == True:
+			for index,atom in enumerate(atoms):# include only atoms that need to be
+				j = top_atomindexlist[index] 
+				atom.Pos.append(frame[j[1]])
 	
 	for atom in atoms:
 		atom.Box = shortBoxLengths

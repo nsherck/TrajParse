@@ -12,16 +12,20 @@ class Atom:
 		self.ImageFlags = []
 		self.Box = []
 		self.neighList = []
-		self.atomType = int(type_)
+		self.atomType = type_
 		self.atomID = int(id_)
 		self.atomMol = int(mol_)
 		self.atomMass = float(mass_)
+		self.atomName = 'N/A' # name from PDB file, not always used
 		self.endFlag = 0
 		self.TimeFrames = len(self.Pos)
 		self.minImageFlag = 0 # if "1", then already minimum imaged
 		self.atomCharge = float(charge_)
 		self.angleList = []
 		self.dihedralList = []
+		self.chemistry = 'N/A'
+		self.solvent = False
+		self.residue = 0
 
 
 	def addCoord(self, pos, box, ImageFlag):
@@ -47,7 +51,7 @@ class Atom:
 
 # Create a class for molecules comprised of atoms or CG beads or both 
 class Molecule:
-	def __init__(self, mol_, type_):
+	def __init__(self, mol_):
 		''' mol_ is the ID and type_ is "polymer_branched, polymer_star, etc '''
 		# the _ is there because id and type are built in to python and can't be overridden
 		self.Atoms = []
@@ -59,7 +63,7 @@ class Molecule:
 		self.EndtoEndVector = []
 		self.moleculeBeginEndAtoms = []
 		self.moleculeID = int(mol_)
-		self.moleculeType = str(type_)
+		self.moleculeType = 'N/A'
 		self.molecularMass = 0.0
 		self.moleculeBackboneBondVectors = [] # b_i = r_i+1 - r_i; a list of timesteps of molecular backbone bond vectors 
 		self.moleculeBackboneBondVectorMagnitudes = []
@@ -86,11 +90,16 @@ class Molecule:
 		'''Add an to the Molecule'''
 		self.Atoms.append(atom)
 	
-	def parseAtoms(self, atoms, ATOM_TYPE_IGNORES_BACKBONE):
+	def parseAtoms(self, atoms, ATOM_TYPE_IGNORES_BACKBONE, ATOM_NAMES_IGNORES_BACKBONE):
 		''' Build Polymer Backbone '''
 		for atomID in self.Atoms:
 			index = atomID - 1 
 			if atoms[index].atomType not in ATOM_TYPE_IGNORES_BACKBONE:
+				Flag_pass = False
+				for i_excl in ATOM_NAMES_IGNORES_BACKBONE:
+					if i_excl in atoms[index].atomName:
+						Flag_pass = True
+			if Flag_pass == False:	
 				self.AtomsBackbone.append(atomID)
 			else:
 				pass
@@ -123,127 +132,127 @@ class Molecule:
 			#print "Center of Mass: {}".format(tempCOM)
 			
 	def CGCalculateCenterOfMass(self, atoms, CGmap, cgatoms, Debug_CGing):
-		'''Calculate the Center of Mass of the coarse-grained beads.'''
-		''' NOTE: coarse-grained bead here is called a monomer '''
-	
-		#N.S. TODO: Currently the COM cg-ing only works by finding the neighbors of the atoms in the backbone. 
-		#               Thus, if there are side-chains hanging off the backbone (i.e. methyl groups, etc.), it will
-		#               not locate those. Need to generalize to instances where this might be the case. 
-	
-		# LOGIC:
-		# (1) First, get backbone atoms in each CG bead (i.e. monomer here)
-		# (2) Parse each atoms neighbor list to include atoms not in backbone, but being lumped into CG bead
-		# (3) Finally, use vector operations to calculate COM for CG bead over all time frames. Should be quick, do not loop. 
-		monomerCharge = 0.0
-		MonomerMass = 1.0 # Set monomer mass to 1, replace below
-		moleculeID = self.moleculeID
-		moleculeCGAtomIDs = []
+			'''Calculate the Center of Mass of the coarse-grained beads.'''
+			''' NOTE: coarse-grained bead here is called a monomer '''
 		
-		if len(cgatoms) == 0:
-			monomerID = 1
-		else:
-			monomerID = len(cgatoms) + 1
+			#N.S. TODO: Currently the COM cg-ing only works by finding the neighbors of the atoms in the backbone. 
+			#               Thus, if there are side-chains hanging off the backbone (i.e. methyl groups, etc.), it will
+			#               not locate those. Need to generalize to instances where this might be the case. 
+		
+			# LOGIC:
+			# (1) First, get backbone atoms in each CG bead (i.e. monomer here)
+			# (2) Parse each atoms neighbor list to include atoms not in backbone, but being lumped into CG bead
+			# (3) Finally, use vector operations to calculate COM for CG bead over all time frames. Should be quick, do not loop. 
+			monomerCharge = 0.0
+			MonomerMass = 1.0 # Set monomer mass to 1, replace below
+			moleculeID = self.moleculeID
+			moleculeCGAtomIDs = []
 			
-		if len(self.Atoms) == 0:
-			print "ERROR: No atoms in molecule list, therefore no atoms to CG. Specify Atoms before calculating COM!"
-			pass
-
-		''' (1) Build atoms in Backbone going to 1 monomer. '''
-		atomCnt = 0
-		BackboneAtomIndexSlicing = []
-		for i in CGmap: # generate slicing array
-			MonomerType = i[2]
-			
-			for j in range((i[0]/i[1])):
-				#print "j = {}".format(j)
-				moleculeCGAtomIDs.append(monomerID)
-				cgatoms.append(Atom(monomerID, moleculeID, MonomerType, MonomerMass, monomerCharge)) # make new monomer
-				monomerID += 1
-				cnt = j + 1 # range function starts from 0
-				if atomCnt == 0:
-					atomStart = 0
-				atomEnd = atomStart + i[1] - 1 + 1 
-				#print "AtomStart {}".format(atomStart)
-				#print "AtomEnd   {}".format(atomEnd)
-				BackboneAtomIndexSlicing.append(self.AtomsBackbone[atomStart:atomEnd]) # Slicing doesn't include the atomEnd element.
-				atomStart = atomEnd
-				atomCnt += i[1]
-		self.moleculeCGAtomIDs = moleculeCGAtomIDs
-		
-		if Debug_CGing == 1:
-			with open("BackboneAtomIndexSlicing.txt", "w") as f:
-				for i,j in enumerate(BackboneAtomIndexSlicing):
-					f.write("monomer {} has atoms {} \n".format(i,j))
-
-		
-		''' (2) Parse neighbor list of backbone atoms going to 1 monomer. '''
-		# N.S. TODO: Need to generalize this 
-		
-		MonomerAtomsList = [] #List of List with atoms mapping to that monomer
-		for i in BackboneAtomIndexSlicing: # pick out backbone atoms in single monomer.
-			monomerTempIDList = [] # build up a modified list of atoms for each monomer that includes the backbone atoms and their neighbors.
-			for atomID in i: # pick out atomID
-				monomerTempIDList.append(atomID)
-				index = atomID - 1
-				atomNeighborIDs = atoms[index].neighList
-				for neighborID in atomNeighborIDs:
-					if int(neighborID) in self.AtomsBackbone:
-						pass
-					else:
-						monomerTempIDList.append(int(neighborID))
-			MonomerAtomsList.append(monomerTempIDList)
-			self.MonomerAtomsList = MonomerAtomsList
-			self.numberOfMonomers = len(self.MonomerAtomsList)
-		
-		if Debug_CGing == 1:
-			with open("MonomerAtoms.txt", "w") as f:
-				for i,j in enumerate(MonomerAtomsList):
-					f.write("monomer {} has atoms {} \n".format(i,j))
+			if len(cgatoms) == 0:
+				monomerID = 1
+			else:
+				monomerID = len(cgatoms) + 1
 				
-		''' (3) Use vector calculus to compute COM. '''
-		monomerCnt = 0
-		for monomerAtoms in self.MonomerAtomsList:
-			tempmx = []
-			tempmy = []
-			tempmz = []
-			MonomerMass = []
-			tempMonomerMass = 0.0
-			PosM = 0.
-			cnt = 0
-			ListAtomIDs = []
-			for atomIDs in monomerAtoms:
-				ListAtomIDs.append(atomIDs)
-				index = atomIDs-1 # python list starts from 0
-				Pos = np.asarray(atoms[index].Pos)
-				atomMass = atoms[index].atomMass 
-				tempPosM = Pos*atomMass
-				if cnt == 0:
-					PosM = tempPosM*0.0
-					PosM = np.add(PosM,tempPosM)
-				else:
-					PosM = np.add(PosM,tempPosM)
-				tempMonomerMass += atomMass
-				cnt +=1
-			MonomerMass.append(tempMonomerMass)
-			#print "MonomerMasses {}".format(MonomerMass)	
-			CGCOM = np.divide(PosM,tempMonomerMass).tolist()
-			
-			tempBox = atoms[index].Box
-			imageFlags = ['N/A','N/A','N/A']
-			#N.S. TODO: Need to add in the ability to have image flags for the CG particles!
-			cgatoms[(self.moleculeCGAtomIDs[monomerCnt]-1)].Pos = CGCOM # update the atoms CGCOM
-			cgatoms[(self.moleculeCGAtomIDs[monomerCnt]-1)].Box = tempBox
-			cgatoms[(self.moleculeCGAtomIDs[monomerCnt]-1)].ImageFlags = imageFlags
-			monomerCnt += 1
+			if len(self.Atoms) == 0:
+				print "ERROR: No atoms in molecule list, therefore no atoms to CG. Specify Atoms before calculating COM!"
+				pass
+
+			''' (1) Build atoms in Backbone going to 1 monomer. '''
+			atomCnt = 0
+			BackboneAtomIndexSlicing = []
+			for i in CGmap: # generate slicing array
+				MonomerType = i[2]
+				
+				for j in range((i[0]/i[1])):
+					#print "j = {}".format(j)
+					moleculeCGAtomIDs.append(monomerID)
+					cgatoms.append(Atom(monomerID, moleculeID, MonomerType, MonomerMass, monomerCharge)) # make new monomer
+					monomerID += 1
+					cnt = j + 1 # range function starts from 0
+					if atomCnt == 0:
+						atomStart = 0
+					atomEnd = atomStart + i[1] - 1 + 1 
+					#print "AtomStart {}".format(atomStart)
+					#print "AtomEnd   {}".format(atomEnd)
+					BackboneAtomIndexSlicing.append(self.AtomsBackbone[atomStart:atomEnd]) # Slicing doesn't include the atomEnd element.
+					atomStart = atomEnd
+					atomCnt += i[1]
+			self.moleculeCGAtomIDs = moleculeCGAtomIDs
 			
 			if Debug_CGing == 1:
-				with open("MonomerCGCOM.txt", "w") as f:
-					f.write("Atom IDs {} \n".format(ListAtomIDs))
-					for i,j in enumerate(CGCOM):
-						f.write("timestep {} & COM {} \n".format(i,j))
-		
-		#print "cgatom1 COM"
-		#print cgatoms[0].Pos
+				with open("BackboneAtomIndexSlicing.txt", "w") as f:
+					for i,j in enumerate(BackboneAtomIndexSlicing):
+						f.write("monomer {} has atoms {} \n".format(i,j))
+
+			
+			''' (2) Parse neighbor list of backbone atoms going to 1 monomer. '''
+			# N.S. TODO: Need to generalize this 
+			
+			MonomerAtomsList = [] #List of List with atoms mapping to that monomer
+			for i in BackboneAtomIndexSlicing: # pick out backbone atoms in single monomer.
+				monomerTempIDList = [] # build up a modified list of atoms for each monomer that includes the backbone atoms and their neighbors.
+				for atomID in i: # pick out atomID
+					monomerTempIDList.append(atomID)
+					index = atomID - 1
+					atomNeighborIDs = atoms[index].neighList
+					for neighborID in atomNeighborIDs:
+						if int(neighborID) in self.AtomsBackbone:
+							pass
+						else:
+							monomerTempIDList.append(int(neighborID))
+				MonomerAtomsList.append(monomerTempIDList)
+				self.MonomerAtomsList = MonomerAtomsList
+				self.numberOfMonomers = len(self.MonomerAtomsList)
+			
+			if Debug_CGing == 1:
+				with open("MonomerAtoms.txt", "w") as f:
+					for i,j in enumerate(MonomerAtomsList):
+						f.write("monomer {} has atoms {} \n".format(i,j))
+					
+			''' (3) Use vector calculus to compute COM. '''
+			monomerCnt = 0
+			for monomerAtoms in self.MonomerAtomsList:
+				tempmx = []
+				tempmy = []
+				tempmz = []
+				MonomerMass = []
+				tempMonomerMass = 0.0
+				PosM = 0.
+				cnt = 0
+				ListAtomIDs = []
+				for atomIDs in monomerAtoms:
+					ListAtomIDs.append(atomIDs)
+					index = atomIDs-1 # python list starts from 0
+					Pos = np.asarray(atoms[index].Pos)
+					atomMass = atoms[index].atomMass 
+					tempPosM = Pos*atomMass
+					if cnt == 0:
+						PosM = tempPosM*0.0
+						PosM = np.add(PosM,tempPosM)
+					else:
+						PosM = np.add(PosM,tempPosM)
+					tempMonomerMass += atomMass
+					cnt +=1
+				MonomerMass.append(tempMonomerMass)
+				#print "MonomerMasses {}".format(MonomerMass)	
+				CGCOM = np.divide(PosM,tempMonomerMass).tolist()
+				
+				tempBox = atoms[index].Box
+				imageFlags = ['N/A','N/A','N/A']
+				#N.S. TODO: Need to add in the ability to have image flags for the CG particles!
+				cgatoms[(self.moleculeCGAtomIDs[monomerCnt]-1)].Pos = CGCOM # update the atoms CGCOM
+				cgatoms[(self.moleculeCGAtomIDs[monomerCnt]-1)].Box = tempBox
+				cgatoms[(self.moleculeCGAtomIDs[monomerCnt]-1)].ImageFlags = imageFlags
+				monomerCnt += 1
+				
+				if Debug_CGing == 1:
+					with open("MonomerCGCOM.txt", "w") as f:
+						f.write("Atom IDs {} \n".format(ListAtomIDs))
+						for i,j in enumerate(CGCOM):
+							f.write("timestep {} & COM {} \n".format(i,j))
+			
+			#print "cgatom1 COM"
+			#print cgatoms[0].Pos
 		
 	def CalculateRadiusOfGyration(self, atoms):
 		''' Calculate the Radius of Gyration '''
